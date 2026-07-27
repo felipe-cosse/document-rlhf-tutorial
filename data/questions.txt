@@ -1,0 +1,7 @@
+# One evaluation or preference question per line. Lines beginning with # are ignored.
+Can I get a refund because I changed my mind about a correctly prepared cake flavor?
+When is the bakery open on Sunday?
+How much notice do I need for a custom cake?
+What is the delivery fee for an address five miles away?
+Can the bakery guarantee that a product has no peanut cross-contact?
+How long can a bank take to show an approved refund?

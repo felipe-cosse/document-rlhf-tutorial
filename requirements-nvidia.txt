@@ -1,0 +1,4 @@
+-r requirements.txt
+
+# Optional: install this file instead of requirements.txt to enable --use-4bit.
+bitsandbytes>=0.46,<1
