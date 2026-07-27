@@ -132,17 +132,18 @@ document-rlhf-tutorial/
 ├── outputs/
 │   ├── sft_adapter/            # Generated after SFT
 │   └── dpo_adapter/            # Generated after DPO
-└── scripts/
-    ├── prepare_documents.py
-    ├── author_sft.py
-    ├── train_sft.py
-    ├── collect_preferences.py
-    ├── train_dpo.py
-    ├── chat.py
-    └── validate_data.py
+├── scripts/
+│   ├── prepare_documents.py
+│   ├── author_sft.py
+│   ├── train_sft.py
+│   ├── collect_preferences.py
+│   ├── train_dpo.py
+│   ├── chat.py
+│   └── validate_data.py
+└── tests/                       # Dependency-light regression tests
 ```
 
-The tracked files under `data/` are fictional examples and are documented in [`data/README.md`](data/README.md). Generated chunks, custom SFT records, preference choices, environment files, and model outputs are excluded from version control because they may be private or large.
+The tracked files under `data/` are fictional examples and are documented in [`data/README.md`](data/README.md). Additional source documents, generated chunks, custom SFT records, preference choices, environment files, and model outputs are excluded from version control because they may be private or large.
 
 ## Installation
 
@@ -155,6 +156,12 @@ python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install --upgrade pip
 pip install -r requirements.txt
+```
+
+Run the dependency-light regression tests:
+
+```bash
+python3 -m unittest discover -s tests -v
 ```
 
 On Windows PowerShell, activate with:
@@ -183,6 +190,14 @@ data/source_documents/
 ├── store_information.txt
 └── your_document.pdf
 ```
+
+New files in `data/source_documents/` are ignored by Git to reduce the risk of publishing private material. The two fictional examples are explicit exceptions. Confirm the behavior before adding real documents:
+
+```bash
+git check-ignore data/source_documents/your_document.pdf
+```
+
+Only use `git add -f` when a source document has been deliberately approved for publication.
 
 Source documents should be:
 
@@ -330,7 +345,7 @@ The program will:
 
 1. retrieve relevant excerpts from your documents;
 2. ask the SFT model to produce two different answers;
-3. display both answers without claiming either is correct; and
+3. randomize the display order without claiming either is correct; and
 4. ask you to select `1`, `2`, skip, or quit.
 
 A saved preference record has this shape:
@@ -353,7 +368,7 @@ Evaluate each pair with a consistent rubric:
 
 Skip pairs when both answers are incorrect or materially equivalent. Low-quality preference labels directly weaken the training signal.
 
-The collector records completed questions and supports resuming a later session. Validate the resulting dataset:
+The collector records completed questions, randomized display order, and generation settings, and supports resuming a later session. Validate the resulting dataset:
 
 ```bash
 python scripts/validate_data.py --preferences data/preferences.jsonl
@@ -407,6 +422,8 @@ python scripts/chat.py
 ```
 
 The inference script retrieves relevant excerpts, passes them to the aligned model, prints the response, and lists the source chunks used as context.
+
+The dependency-light retriever removes common question words and requires at least 60% of a multi-term query's content words to match, with a minimum of two matches. This conservative rule favors returning no excerpt over presenting an incidental lexical match as evidence. Single-term content queries remain supported.
 
 To test the SFT adapter before DPO:
 

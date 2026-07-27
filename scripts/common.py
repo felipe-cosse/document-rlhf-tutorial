@@ -13,6 +13,60 @@ from typing import Any, Iterable
 
 SUPPORTED_SUFFIXES = {".md", ".markdown", ".txt", ".pdf"}
 WORD_RE = re.compile(r"[\w'-]+", re.UNICODE)
+STOP_WORDS = {
+    "a",
+    "an",
+    "and",
+    "are",
+    "as",
+    "at",
+    "be",
+    "by",
+    "can",
+    "could",
+    "did",
+    "do",
+    "does",
+    "for",
+    "from",
+    "had",
+    "has",
+    "have",
+    "how",
+    "i",
+    "if",
+    "in",
+    "is",
+    "it",
+    "may",
+    "me",
+    "my",
+    "of",
+    "on",
+    "or",
+    "our",
+    "should",
+    "that",
+    "the",
+    "their",
+    "there",
+    "this",
+    "to",
+    "was",
+    "we",
+    "were",
+    "what",
+    "when",
+    "where",
+    "which",
+    "who",
+    "why",
+    "will",
+    "with",
+    "would",
+    "you",
+    "your",
+}
 
 
 def read_document(path: Path) -> str:
@@ -61,7 +115,12 @@ def chunk_text(text: str, max_words: int = 260, overlap_words: int = 40) -> list
         return []
 
     step = max_words - overlap_words
-    return [" ".join(words[start : start + max_words]) for start in range(0, len(words), step)]
+    chunks: list[str] = []
+    for start in range(0, len(words), step):
+        chunks.append(" ".join(words[start : start + max_words]))
+        if start + max_words >= len(words):
+            break
+    return chunks
 
 
 def document_chunks(input_dir: Path, max_words: int, overlap_words: int) -> list[dict[str, Any]]:
@@ -118,14 +177,24 @@ def write_jsonl(path: Path, records: Iterable[dict[str, Any]]) -> None:
 
 
 def words(text: str) -> list[str]:
-    return [match.group(0).lower() for match in WORD_RE.finditer(text)]
+    normalized: list[str] = []
+    for match in WORD_RE.finditer(text):
+        term = match.group(0).lower()
+        if term not in STOP_WORDS:
+            if len(term) > 4 and term.endswith("ies"):
+                term = f"{term[:-3]}y"
+            elif len(term) > 3 and term.endswith("s") and not term.endswith("ss"):
+                term = term[:-1]
+        normalized.append(term)
+    return normalized
 
 
 def retrieve(query: str, chunks: list[dict[str, Any]], top_k: int = 3) -> list[dict[str, Any]]:
     """Rank a small local corpus with transparent TF-IDF-style lexical scoring."""
     if not chunks:
         return []
-    query_terms = set(words(query))
+    query_words = words(query)
+    query_terms = set(query_words) - STOP_WORDS
     if not query_terms:
         return []
 
@@ -136,14 +205,19 @@ def retrieve(query: str, chunks: list[dict[str, Any]], top_k: int = 3) -> list[d
 
     total = len(chunks)
     ranked: list[tuple[float, dict[str, Any]]] = []
-    query_phrase = " ".join(words(query))
+    query_phrase = " ".join(query_words)
+    minimum_term_matches = (
+        1 if len(query_terms) == 1 else max(2, math.ceil(len(query_terms) * 0.6))
+    )
     for chunk, tokens in zip(chunks, tokenized):
         counts = Counter(tokens)
+        matched_terms = query_terms.intersection(counts)
+        if len(matched_terms) < minimum_term_matches:
+            continue
         score = 0.0
-        for term in query_terms:
-            if term in counts:
-                inverse_document_frequency = math.log((total + 1) / (document_frequency[term] + 1)) + 1
-                score += (1 + math.log(counts[term])) * inverse_document_frequency
+        for term in matched_terms:
+            inverse_document_frequency = math.log((total + 1) / (document_frequency[term] + 1)) + 1
+            score += (1 + math.log(counts[term])) * inverse_document_frequency
         score /= math.sqrt(max(len(tokens), 1))
         if query_phrase and query_phrase in " ".join(tokens):
             score += 1.0

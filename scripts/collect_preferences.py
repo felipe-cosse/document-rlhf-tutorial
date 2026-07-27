@@ -4,11 +4,24 @@
 from __future__ import annotations
 
 import argparse
+import random
 from datetime import datetime, timezone
 from pathlib import Path
 
 from common import append_jsonl, grounded_prompt, load_questions, read_jsonl, retrieve
 from modeling import generate_answer, load_for_inference
+
+
+def randomized_candidates(
+    first: str,
+    second: str,
+    *,
+    rng: random.Random | random.SystemRandom | None = None,
+) -> list[tuple[str, str]]:
+    """Return candidates in an unbiased display order while retaining their identities."""
+    candidates = [("first", first), ("second", second)]
+    (rng or random.SystemRandom()).shuffle(candidates)
+    return candidates
 
 
 def parse_args() -> argparse.Namespace:
@@ -69,10 +82,24 @@ def main() -> None:
                 temperature=1.1,
                 seed=2001 + index,
             )
+            second_temperature = 1.1
+            second_seed = 2001 + index
+        else:
+            second_temperature = 0.9
+            second_seed = 1001 + index * 2
+
+        if not first or not second:
+            print(f"\nSkipped question {index}: the model produced an empty candidate.")
+            continue
+        if first == second:
+            print(f"\nSkipped question {index}: both generated candidates were identical.")
+            continue
+
+        displayed = randomized_candidates(first, second)
 
         print(f"\n=== Question {index}/{len(questions)} ===\n{question}")
-        print(f"\n--- Answer 1 ---\n{first}")
-        print(f"\n--- Answer 2 ---\n{second}")
+        print(f"\n--- Answer 1 ---\n{displayed[0][1]}")
+        print(f"\n--- Answer 2 ---\n{displayed[1][1]}")
         while True:
             choice = input("\nBetter answer [1/2/s/q]: ").strip().lower()
             if choice in {"1", "2", "s", "q"}:
@@ -81,7 +108,9 @@ def main() -> None:
             break
         if choice == "s":
             continue
-        chosen, rejected = (first, second) if choice == "1" else (second, first)
+        selected_index = 0 if choice == "1" else 1
+        chosen_id, chosen = displayed[selected_index]
+        rejected_id, rejected = displayed[1 - selected_index]
         append_jsonl(
             args.output,
             {
@@ -93,6 +122,13 @@ def main() -> None:
                     "source_paths": [match["source"] for match in matches],
                     "annotated_at": datetime.now(timezone.utc).isoformat(),
                     "annotator": "human",
+                    "display_order": [candidate_id for candidate_id, _ in displayed],
+                    "selected_candidate": chosen_id,
+                    "rejected_candidate": rejected_id,
+                    "generation": {
+                        "first": {"temperature": 0.65, "seed": 1000 + index * 2},
+                        "second": {"temperature": second_temperature, "seed": second_seed},
+                    },
                 },
             },
         )

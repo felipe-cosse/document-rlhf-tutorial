@@ -10,7 +10,7 @@ from typing import Any
 from common import read_jsonl
 
 
-def message_list(value: Any, label: str) -> None:
+def message_list(value: Any, label: str) -> list[dict[str, str]]:
     if not isinstance(value, list) or not value:
         raise ValueError(f"{label} must be a non-empty list")
     for message in value:
@@ -20,16 +20,38 @@ def message_list(value: Any, label: str) -> None:
             raise ValueError(f"Invalid role in {label}: {message.get('role')!r}")
         if not isinstance(message.get("content"), str) or not message["content"].strip():
             raise ValueError(f"Each {label} message needs non-empty content")
+    return value
+
+
+def conversation(value: Any, label: str, *, final_role: str) -> list[dict[str, str]]:
+    messages = message_list(value, label)
+    roles = [message["role"] for message in messages]
+    if "system" in roles[1:] or roles.count("system") > 1:
+        raise ValueError(f"{label} may contain one system message, and only at the beginning")
+
+    dialogue_roles = roles[1:] if roles[0] == "system" else roles
+    if not dialogue_roles or dialogue_roles[0] != "user":
+        raise ValueError(f"{label} dialogue must begin with a user message")
+    expected = ["user" if index % 2 == 0 else "assistant" for index in range(len(dialogue_roles))]
+    if dialogue_roles != expected:
+        raise ValueError(f"{label} roles must alternate user and assistant")
+    if dialogue_roles[-1] != final_role:
+        raise ValueError(f"{label} must end with {final_role}")
+    return messages
+
+
+def assistant_completion(value: Any, label: str) -> list[dict[str, str]]:
+    messages = message_list(value, label)
+    if len(messages) != 1 or messages[0]["role"] != "assistant":
+        raise ValueError(f"{label} must contain exactly one assistant response")
+    return messages
 
 
 def validate_sft(path: Path) -> int:
     records = read_jsonl(path)
     for number, record in enumerate(records, start=1):
         try:
-            message_list(record.get("messages"), "messages")
-            roles = [message["role"] for message in record["messages"]]
-            if "user" not in roles or roles[-1] != "assistant":
-                raise ValueError("messages must include a user and end with an assistant")
+            conversation(record.get("messages"), "messages", final_role="assistant")
         except ValueError as exc:
             raise ValueError(f"{path}, record {number}: {exc}") from exc
     if not records:
@@ -42,16 +64,15 @@ def validate_preferences(path: Path) -> tuple[int, int]:
     demo_count = 0
     for number, record in enumerate(records, start=1):
         try:
-            message_list(record.get("prompt"), "prompt")
-            message_list(record.get("chosen"), "chosen")
-            message_list(record.get("rejected"), "rejected")
+            conversation(record.get("prompt"), "prompt", final_role="user")
+            assistant_completion(record.get("chosen"), "chosen")
+            assistant_completion(record.get("rejected"), "rejected")
             if record["chosen"] == record["rejected"]:
                 raise ValueError("chosen and rejected answers must differ")
-            if record["chosen"][-1]["role"] != "assistant":
-                raise ValueError("chosen must end with an assistant answer")
-            if record["rejected"][-1]["role"] != "assistant":
-                raise ValueError("rejected must end with an assistant answer")
-            if record.get("metadata", {}).get("demo"):
+            metadata = record.get("metadata", {})
+            if not isinstance(metadata, dict):
+                raise ValueError("metadata must be an object when provided")
+            if metadata.get("demo"):
                 demo_count += 1
         except ValueError as exc:
             raise ValueError(f"{path}, record {number}: {exc}") from exc

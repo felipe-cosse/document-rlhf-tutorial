@@ -10,6 +10,18 @@ from modeling import quantization_config
 from validate_data import validate_preferences
 
 
+def model_load_kwargs(*, force_cpu: bool, quantization: object | None) -> dict[str, object]:
+    """Build model-loading options without allowing --cpu to select an accelerator."""
+    kwargs: dict[str, object] = {
+        "is_trainable": True,
+        "device_map": "cpu" if force_cpu else "auto",
+        "dtype": "auto",
+    }
+    if quantization is not None:
+        kwargs["quantization_config"] = quantization
+    return kwargs
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--sft-adapter", type=Path, default=Path("outputs/sft_adapter"))
@@ -51,9 +63,7 @@ def main() -> None:
     from trl import DPOConfig, DPOTrainer
 
     quantization = quantization_config(args.use_4bit)
-    model_kwargs = {"is_trainable": True, "device_map": "auto", "dtype": "auto"}
-    if quantization is not None:
-        model_kwargs["quantization_config"] = quantization
+    model_kwargs = model_load_kwargs(force_cpu=args.cpu, quantization=quantization)
     model = AutoPeftModelForCausalLM.from_pretrained(args.sft_adapter, **model_kwargs)
     tokenizer = AutoTokenizer.from_pretrained(args.sft_adapter)
     tokenizer.padding_side = "left"

@@ -19,6 +19,9 @@ venv/
 !.env.example
 
 # User documents and derived data
+data/source_documents/*
+!data/source_documents/refund_policy.md
+!data/source_documents/store_information.txt
 data/processed/*
 !data/processed/.gitkeep
 data/sft.custom.jsonl
