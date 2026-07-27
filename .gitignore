@@ -1,0 +1,30 @@
+# Operating-system and editor files
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+
+# Local configuration and secrets
+.env
+.env.*
+!.env.example
+
+# User documents and derived data
+data/processed/*
+!data/processed/.gitkeep
+data/sft.custom.jsonl
+data/preferences.jsonl
+
+# Trained adapters and model artifacts
+outputs/
+checkpoints/
+wandb/

@@ -1,6 +1,6 @@
 # A beginner's guide to aligning an open-source LLM with your documents and feedback
 
-This tutorial builds a small, private question-answering assistant from:
+This public tutorial builds a small, private question-answering assistant from:
 
 - an open-source language model;
 - PDF, text, and Markdown files that you own or may legally use;
@@ -10,7 +10,13 @@ This tutorial builds a small, private question-answering assistant from:
 You do **not** need to understand the mathematics of machine learning to follow the workflow. The Python files are complete and runnable, and every important term is explained below.
 
 > [!IMPORTANT]
-> This tutorial references Nathan Lambert's [RLHF Book](https://rlhfbook.com/) for theory but does not redistribute the book corpus. Use only your own or properly licensed files for training. Put only your own or properly licensed files in this tutorial's `data/source_documents/` directory.
+> This repository contains no private organizational corpus and does not redistribute the RLHF Book. The included Sunrise Bakery documents and training records are fictional teaching data. For your own experiments, use only documents you own or have permission to use.
+
+## Book and attribution
+
+The conceptual foundation for this tutorial is [*Reinforcement Learning from Human Feedback*](https://rlhfbook.com/) by [Nathan Lambert](https://rlhfbook.com/). The book provides a broader treatment of instruction tuning, preference data, reward modeling, reinforcement learning, and direct-alignment algorithms. This repository is an independent educational example; it is not official companion code and is not affiliated with or endorsed by Nathan Lambert.
+
+Read the [web edition](https://rlhfbook.com/) or the [book PDF](https://rlhfbook.com/book.pdf). Links to individual public chapters appear throughout this guide and in [Technical references](#technical-references).
 
 ## What you will make
 
@@ -53,7 +59,7 @@ Documents provide **knowledge and evidence**. Human feedback provides a **behavi
 3. DPO learns from those choices.
 4. Retrieval supplies current document text every time the model is used.
 
-Nathan Lambert's RLHF Book describes SFT as the first post-training step and distinguishes policy-gradient RL, reward modeling, and direct-alignment methods such as DPO in [Training Overview](https://rlhfbook.com/c/03-training-overview) ([upstream source](https://github.com/natolambert/rlhf-book/blob/a09c1c18495544095cf3b951a947685c90da3791/book/chapters/03-training-overview.md)). It also emphasizes that completion quality matters in [Instruction Fine-Tuning](https://rlhfbook.com/c/04-instruction-tuning) ([upstream source](https://github.com/natolambert/rlhf-book/blob/a09c1c18495544095cf3b951a947685c90da3791/book/chapters/04-instruction-tuning.md)).
+Nathan Lambert's RLHF Book describes SFT as the first post-training step and distinguishes policy-gradient RL, reward modeling, and direct-alignment methods such as DPO in [Training Overview](https://rlhfbook.com/c/03-training-overview). It also emphasizes the importance of completion quality in [Instruction Fine-Tuning](https://rlhfbook.com/c/04-instruction-tuning).
 
 ### Is DPO the same as classic RLHF?
 
@@ -100,7 +106,7 @@ The included eight SFT records and two example preference records are only a **s
 ## Folder map
 
 ```text
-document-rlhf/
+document-rlhf-tutorial/
 ├── README.md
 ├── requirements.txt
 ├── requirements-nvidia.txt
@@ -110,6 +116,7 @@ document-rlhf/
 │   ├── sft.jsonl               # Included teaching examples
 │   ├── sft.custom.jsonl        # Your human-authored examples
 │   ├── questions.txt           # Questions used to collect preferences
+│   ├── preferences.example.jsonl # Included demonstration preference pairs
 │   └── preferences.jsonl       # Your generated human choices
 ├── outputs/
 │   ├── sft_adapter/            # Generated after SFT
@@ -124,7 +131,7 @@ document-rlhf/
     └── validate_data.py
 ```
 
-Generated data and model outputs are ignored by Git by default because they can be private or large.
+The tracked files under `data/` are fictional examples and are documented in [`data/README.md`](data/README.md). Generated chunks, custom SFT records, preference choices, environment files, and model outputs are ignored by Git by default because they can be private or large.
 
 ## Step 0: install the software
 
@@ -154,7 +161,7 @@ The first model command downloads roughly the model and tokenizer files from Hug
 
 ## Step 1: add PDF, text, and Markdown files
 
-Two fictional Sunrise Bakery files are included so the example works immediately. Replace them with your own files when ready:
+Two fictional Sunrise Bakery files are included so the example works immediately. They do not describe a real business or use internal organizational data. Replace them with your own properly licensed files when ready:
 
 ```text
 data/source_documents/
@@ -544,7 +551,7 @@ Before training:
 
 Once the basic workflow is reliable, useful next steps are:
 
-1. replace keyword retrieval with the repository's vector-RAG approach;
+1. replace keyword retrieval with an embedding-based vector retriever;
 2. add a browser interface with Gradio or another local UI;
 3. record reasons for each preference, not only the winner;
 4. add automatic checks for unsupported claims and source coverage;
@@ -555,10 +562,34 @@ The small model is a teaching tool. The durable asset is the carefully reviewed 
 
 ## Technical references
 
-- Nathan Lambert's RLHF Book: [Training Overview](https://rlhfbook.com/c/03-training-overview) ([upstream](https://github.com/natolambert/rlhf-book/blob/a09c1c18495544095cf3b951a947685c90da3791/book/chapters/03-training-overview.md)), [Instruction Fine-Tuning](https://rlhfbook.com/c/04-instruction-tuning) ([upstream](https://github.com/natolambert/rlhf-book/blob/a09c1c18495544095cf3b951a947685c90da3791/book/chapters/04-instruction-tuning.md)), [Direct-Alignment Algorithms](https://rlhfbook.com/c/08-direct-alignment) ([upstream](https://github.com/natolambert/rlhf-book/blob/a09c1c18495544095cf3b951a947685c90da3791/book/chapters/08-direct-alignment.md)), and [Preference Data](https://rlhfbook.com/c/11-preference-data) ([upstream](https://github.com/natolambert/rlhf-book/blob/a09c1c18495544095cf3b951a947685c90da3791/book/chapters/11-preference-data.md)).
+- Nathan Lambert's [*Reinforcement Learning from Human Feedback*](https://rlhfbook.com/): [Training Overview](https://rlhfbook.com/c/03-training-overview), [Instruction Fine-Tuning](https://rlhfbook.com/c/04-instruction-tuning), [Direct-Alignment Algorithms](https://rlhfbook.com/c/08-direct-alignment), and [Preference Data](https://rlhfbook.com/c/11-preference-data).
 - [Qwen3-0.6B-Base model card](https://huggingface.co/Qwen/Qwen3-0.6B-Base).
 - [TRL SFT Trainer documentation](https://huggingface.co/docs/trl/sft_trainer).
 - [TRL DPO Trainer documentation](https://huggingface.co/docs/trl/dpo_trainer).
 - [Transformers bitsandbytes/QLoRA documentation](https://huggingface.co/docs/transformers/quantization/bitsandbytes).
 - [PyMuPDF text-extraction documentation](https://pymupdf.readthedocs.io/en/latest/the-basics.html#extract-text-from-a-pdf).
 - [Direct Preference Optimization paper](https://arxiv.org/abs/2305.18290).
+
+### Cite the RLHF Book
+
+If the book informs your work, use the citation provided by its author:
+
+```bibtex
+@book{rlhf2026lambert,
+  author = {Nathan Lambert},
+  title = {Reinforcement Learning from Human Feedback},
+  year = {2026},
+  publisher = {Online},
+  url = {https://rlhfbook.com}
+}
+```
+
+## License and third-party attribution
+
+Copyright 2026 Felipe Cosse.
+
+The original code, documentation, and synthetic example data in this repository are licensed under the [Apache License 2.0](LICENSE).
+
+The RLHF Book is a separate work by Nathan Lambert. This repository references and cites the book but does not redistribute its chapters or claim them under this repository's license. The book project licenses its code under MIT and its chapters under CC BY-NC-SA 4.0; consult the [official RLHF Book repository](https://github.com/natolambert/rlhf-book) before reusing that material.
+
+The Qwen model, Python packages, and other linked resources retain their respective licenses. They are dependencies or references and are not relicensed by this repository.
