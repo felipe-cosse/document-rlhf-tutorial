@@ -1,35 +1,45 @@
-# A beginner's guide to aligning an open-source LLM with your documents and feedback
+# Document-Grounded LLM Alignment with SFT, DPO, and RAG
 
-This public tutorial builds a small, private question-answering assistant from:
+An end-to-end educational implementation for adapting a small open-source language model to answer questions from a local document collection. The workflow combines supervised fine-tuning (SFT), human preference collection, Direct Preference Optimization (DPO), parameter-efficient LoRA adapters, and retrieval-augmented generation (RAG).
 
-- an open-source language model;
-- PDF, text, and Markdown files that you own or may legally use;
-- good example answers written by a person; and
-- human choices between better and worse model answers.
+## Overview
 
-You do **not** need to understand the mathematics of machine learning to follow the workflow. The Python files are complete and runnable, and every important term is explained below.
+This repository provides:
+
+- document ingestion for PDF, plain-text, and Markdown files;
+- transparent local chunking and keyword retrieval;
+- tools for authoring and validating conversational SFT records;
+- an interactive workflow for collecting preferred and rejected responses;
+- LoRA-based SFT and DPO training with Hugging Face TRL; and
+- grounded inference that reports the retrieved source chunks.
+
+The project is designed for learning and small-scale experimentation. The included datasets are intentionally minimal and are not suitable for production training.
 
 > [!IMPORTANT]
-> This repository contains no private organizational corpus and does not redistribute the RLHF Book. The included Sunrise Bakery documents and training records are fictional teaching data. For your own experiments, use only documents you own or have permission to use.
+> This repository contains no private organizational corpus and does not redistribute the RLHF Book. Sunrise Bakery, its policies, and all included training records are fictional. Use only source documents that you own or are authorized to process and train on.
 
-## Book and attribution
+## Contents
 
-The conceptual foundation for this tutorial is [*Reinforcement Learning from Human Feedback*](https://rlhfbook.com/) by [Nathan Lambert](https://rlhfbook.com/). The book provides a broader treatment of instruction tuning, preference data, reward modeling, reinforcement learning, and direct-alignment algorithms. This repository is an independent educational example; it is not official companion code and is not affiliated with or endorsed by Nathan Lambert.
+- [Background and attribution](#background-and-attribution)
+- [Architecture](#architecture)
+- [Methodology](#methodology)
+- [Technology stack](#technology-stack)
+- [Installation](#installation)
+- [Workflow](#workflow)
+- [Implementation notes](#implementation-notes)
+- [Troubleshooting](#troubleshooting)
+- [Responsible-use checklist](#responsible-use-checklist)
+- [License and attribution](#license-and-attribution)
 
-Read the [web edition](https://rlhfbook.com/) or the [book PDF](https://rlhfbook.com/book.pdf). Links to individual public chapters appear throughout this guide and in [Technical references](#technical-references).
+## Background and attribution
 
-## What you will make
+The conceptual foundation for this tutorial is Nathan Lambert's [*Reinforcement Learning from Human Feedback*](https://rlhfbook.com/). The book provides a comprehensive treatment of instruction tuning, preference data, reward modeling, reinforcement learning, and direct-alignment algorithms.
 
-Imagine a new employee with a general education but no knowledge of your organization:
+This repository is an independent educational implementation. It is not official companion code and is not affiliated with or endorsed by Nathan Lambert. The [web edition](https://rlhfbook.com/) and [book PDF](https://rlhfbook.com/book.pdf) provide the broader theoretical context.
 
-- The **base model** is the new employee.
-- Your **documents** are the employee handbook.
-- **SFT examples** demonstrate how a good employee answers.
-- **Human preferences** say, “Answer A is better than answer B.”
-- **DPO** changes a small adapter so answers more often follow those preferences.
-- **Retrieval**, also called RAG, opens the relevant handbook pages whenever someone asks a question.
+## Architecture
 
-The result is a small LoRA adapter plus a local document corpus. Your original model is not overwritten.
+The pipeline produces an SFT adapter and a DPO-aligned adapter while keeping the source documents available to the retrieval layer. The base model is not modified in place.
 
 ```mermaid
 flowchart LR
@@ -48,62 +58,63 @@ flowchart LR
     K --> M
 ```
 
-## An important truth: files are not human feedback
+## Methodology
 
-A folder of PDFs does not automatically become RLHF data.
+Documents and human feedback serve different purposes in this workflow:
 
-Documents provide **knowledge and evidence**. Human feedback provides a **behavioral signal**—for example, preferring an accurate, concise, source-grounded answer over a confident invention. This tutorial uses both:
+1. **Documents** provide current knowledge and supporting evidence.
+2. **SFT records** demonstrate the expected question-answer format and response quality.
+3. **Human preferences** identify which model response better satisfies the evaluation criteria.
+4. **DPO** updates the adapter toward the preferred response patterns.
+5. **Retrieval** supplies relevant document excerpts at inference time.
 
-1. SFT teaches the desired question-answer pattern from ideal examples.
-2. A person compares model answers.
-3. DPO learns from those choices.
-4. Retrieval supplies current document text every time the model is used.
+Raw documents are therefore not equivalent to human-feedback data. They must be transformed into reviewed instruction examples or used as retrieval context.
 
 Nathan Lambert's RLHF Book describes SFT as the first post-training step and distinguishes policy-gradient RL, reward modeling, and direct-alignment methods such as DPO in [Training Overview](https://rlhfbook.com/c/03-training-overview). It also emphasizes the importance of completion quality in [Instruction Fine-Tuning](https://rlhfbook.com/c/04-instruction-tuning).
 
-### Is DPO the same as classic RLHF?
+### DPO and canonical RLHF
 
-Not exactly. Precise names matter:
+This tutorial uses a direct-alignment workflow rather than canonical PPO-based RLHF:
 
-| Workflow | Stages | Difficulty |
+| Workflow | Training stages | Operational complexity |
 |---|---|---|
-| Classic RLHF | SFT → human preferences → reward model → PPO or another RL algorithm | High |
-| This tutorial | SFT → human preferences → DPO | Beginner-friendly |
+| Canonical RLHF | SFT → human preferences → reward model → PPO or another RL algorithm | High |
+| This repository | SFT → human preferences → DPO | Moderate |
 
-DPO is preference fine-tuning, also called a direct-alignment algorithm. It solves the same practical alignment problem using preferred/rejected answer pairs, without a separate reward model or online RL loop. The [DPO paper](https://arxiv.org/abs/2305.18290) and current [TRL DPO documentation](https://huggingface.co/docs/trl/dpo_trainer) explain this relationship. Calling this “classic PPO-based RLHF” would be inaccurate; calling it a practical human-feedback alignment workflow is accurate.
+DPO is a preference fine-tuning method and direct-alignment algorithm. It learns from preferred and rejected response pairs without requiring a separate reward model or online reinforcement-learning loop. See the [DPO paper](https://arxiv.org/abs/2305.18290) and [TRL DPO documentation](https://huggingface.co/docs/trl/dpo_trainer) for the underlying method.
 
-## Why this model and these tools?
+## Technology stack
 
-The default model is [`Qwen/Qwen3-0.6B-Base`](https://huggingface.co/Qwen/Qwen3-0.6B-Base):
+The default model is [`Qwen/Qwen3-0.6B-Base`](https://huggingface.co/Qwen/Qwen3-0.6B-Base). It provides a practical baseline because it:
 
-- it is small enough for learning and experimentation;
-- it has 0.6 billion parameters and a 32,768-token context window;
-- it uses the Apache 2.0 license; and
-- its official model card supports Hugging Face Transformers.
+- is small enough for educational experiments;
+- has 0.6 billion parameters and a 32,768-token context window;
+- is distributed under the Apache 2.0 license; and
+- supports the Hugging Face Transformers interface.
 
-The tutorial uses:
+The implementation uses:
 
-- **Transformers** to load and run the model;
+- **Transformers** for model loading and generation;
 - **TRL** for SFT and DPO training;
-- **PEFT/LoRA** to train small adapter weights instead of the entire model;
-- **PyMuPDF** to extract selectable text from PDFs; and
-- a transparent local keyword retriever, so no API key or vector service is required.
+- **PEFT/LoRA** for parameter-efficient adapter training;
+- **PyMuPDF** for PDF text extraction; and
+- a dependency-light keyword retriever that requires no API key or vector database.
 
-Current TRL supports conversational datasets, SFT adapters, and DPO preference records with `prompt`, `chosen`, and `rejected` fields. See the official [SFT Trainer](https://huggingface.co/docs/trl/sft_trainer) and [DPO Trainer](https://huggingface.co/docs/trl/dpo_trainer) pages.
+The datasets use TRL's conversational formats for SFT and DPO, including the `prompt`, `chosen`, and `rejected` fields documented by the [SFT Trainer](https://huggingface.co/docs/trl/sft_trainer) and [DPO Trainer](https://huggingface.co/docs/trl/dpo_trainer).
 
-## Hardware and time
+## Hardware requirements
 
-The data-preparation scripts run on an ordinary computer. Training is the expensive part.
+Document preparation and validation run on a standard computer. Model training is the resource-intensive stage.
 
-| Computer | What to expect |
+| Environment | Recommended use |
 |---|---|
-| NVIDIA GPU with 12–16 GB or more | Recommended. Use `--use-4bit` to reduce memory. A Colab or Kaggle GPU is suitable for the small demo. |
-| Apple Silicon Mac | Ingestion and chat work. Training may work with MPS, but it can be slow and memory-sensitive. Do not add `--use-4bit`. |
-| CPU-only computer | Ingestion works. Model training is extremely slow; use a hosted GPU instead. |
+| NVIDIA GPU with 12–16 GB or more | Preferred for training. Use `--use-4bit` to reduce memory consumption. Colab and Kaggle GPUs are suitable for the demonstration dataset. |
+| Apple Silicon Mac | Suitable for ingestion and inference. MPS training may be slow and memory-sensitive. Do not use `--use-4bit`. |
+| CPU-only computer | Suitable for ingestion and validation. Model training is generally impractical; use a hosted GPU environment. |
 
-The included eight SFT records and two example preference records are only a **smoke test**. They prove the pipeline runs; they will not create a production-quality assistant. For a real project, begin with roughly 100–500 carefully reviewed SFT examples and at least 50–200 genuine preference choices, then evaluate before expanding. Quality matters more than blindly generating many rows.
+The eight included SFT records and two demonstration preference records are sufficient only for pipeline validation. A substantive experiment should begin with approximately 100–500 reviewed SFT examples and 50–200 genuine preference pairs, followed by held-out evaluation before further scaling.
 
-## Folder map
+## Repository structure
 
 ```text
 document-rlhf-tutorial/
@@ -131,13 +142,14 @@ document-rlhf-tutorial/
     └── validate_data.py
 ```
 
-The tracked files under `data/` are fictional examples and are documented in [`data/README.md`](data/README.md). Generated chunks, custom SFT records, preference choices, environment files, and model outputs are ignored by Git by default because they can be private or large.
+The tracked files under `data/` are fictional examples and are documented in [`data/README.md`](data/README.md). Generated chunks, custom SFT records, preference choices, environment files, and model outputs are excluded from version control because they may be private or large.
 
-## Step 0: install the software
+## Installation
 
-Open a terminal in the repository, then enter:
+Clone the repository, create a virtual environment, and install the standard dependencies:
 
 ```bash
+git clone https://github.com/felipe-cosse/document-rlhf-tutorial.git
 cd document-rlhf-tutorial
 python3 -m venv .venv
 source .venv/bin/activate
@@ -151,17 +163,19 @@ On Windows PowerShell, activate with:
 .venv\Scripts\Activate.ps1
 ```
 
-For an NVIDIA GPU and 4-bit training, install the NVIDIA list instead:
+For NVIDIA GPU environments that require 4-bit training, install the NVIDIA dependency set instead:
 
 ```bash
 pip install -r requirements-nvidia.txt
 ```
 
-The first model command downloads roughly the model and tokenizer files from Hugging Face. The exact cache size can change between model revisions.
+The first model operation downloads the model and tokenizer from Hugging Face. Cache size may vary between model revisions.
 
-## Step 1: add PDF, text, and Markdown files
+## Workflow
 
-Two fictional Sunrise Bakery files are included so the example works immediately. They do not describe a real business or use internal organizational data. Replace them with your own properly licensed files when ready:
+### 1. Prepare source documents
+
+The repository includes two fictional Sunrise Bakery documents for immediate testing. They do not describe a real business or contain internal organizational data. Replace or supplement them with authorized source files:
 
 ```text
 data/source_documents/
@@ -170,57 +184,57 @@ data/source_documents/
 └── your_document.pdf
 ```
 
-Good source material is:
+Source documents should be:
 
-- legally usable;
+- owned by you or licensed for the intended use;
 - accurate and current;
-- written clearly;
-- free of unnecessary passwords, personal data, or secrets; and
-- focused on the questions users will actually ask.
+- clearly written;
+- free of credentials, unnecessary personal data, and other sensitive information; and
+- relevant to the questions the system is expected to answer.
 
-### PDF warning
+#### PDF text requirements
 
-The script extracts selectable text using PyMuPDF's documented `page.get_text()` method. A scanned PDF is a collection of images, so it may contain no selectable text. Run OCR on scanned documents first. The script stops with a clear message instead of silently ingesting an empty PDF. See the official [PyMuPDF text-extraction guide](https://pymupdf.readthedocs.io/en/latest/the-basics.html#extract-text-from-a-pdf).
+The ingestion script extracts selectable text with PyMuPDF's `page.get_text()` method. Image-only PDFs must be processed with OCR before ingestion. The script terminates with an error when a PDF contains no selectable text. See the [PyMuPDF text-extraction guide](https://pymupdf.readthedocs.io/en/latest/the-basics.html#extract-text-from-a-pdf).
 
-## Step 2: extract and split the documents
+### 2. Build the document corpus
 
-Run:
+Extract and chunk the source documents:
 
 ```bash
 python scripts/prepare_documents.py
 ```
 
-Expected output for the included files resembles:
+Expected output for the included examples:
 
 ```text
 Prepared 2 chunks from 2 documents.
 Saved: data/processed/chunks.jsonl
 ```
 
-What happened? The script:
+The script:
 
-1. found every `.pdf`, `.txt`, `.md`, and `.markdown` file;
-2. extracted its text;
-3. split long text into overlapping excerpts; and
-4. saved the source filename with every excerpt.
+1. discovers supported `.pdf`, `.txt`, `.md`, and `.markdown` files;
+2. extracts and normalizes their text;
+3. creates overlapping chunks; and
+4. preserves source filenames and chunk identifiers.
 
 Inspect the result:
 
 ```bash
-python -m json.tool --json-lines data/processed/chunks.jsonl | head -80
+python -m json.tool --json-lines data/processed/chunks.jsonl | sed -n '1,80p'
 ```
 
-For unusually long or short documents, change chunk size:
+Adjust the chunk and overlap sizes when required:
 
 ```bash
 python scripts/prepare_documents.py --max-words 350 --overlap-words 50
 ```
 
-## Step 3: create good SFT examples
+### 3. Create the SFT dataset
 
-SFT means **supervised fine-tuning**. Each example shows a user request followed by the ideal assistant response.
+Each supervised fine-tuning record contains a user request and an ideal assistant response.
 
-The included `data/sft.jsonl` has eight examples. One simplified record looks like this:
+The included `data/sft.jsonl` contains eight examples. A simplified record has the following structure:
 
 ```json
 {
@@ -231,7 +245,7 @@ The included `data/sft.jsonl` has eight examples. One simplified record looks li
 }
 ```
 
-The source excerpt is included in the prompt. This teaches the model to use evidence rather than merely trying to memorize a policy.
+Each prompt includes its supporting source excerpt so the model learns the expected evidence-grounded response format.
 
 Validate the included examples:
 
@@ -239,42 +253,42 @@ Validate the included examples:
 python scripts/validate_data.py --sft data/sft.jsonl
 ```
 
-### Create examples from your own files
+#### Author custom examples
 
-Run the interactive authoring tool:
+Use the interactive authoring tool to create reviewed examples:
 
 ```bash
 python scripts/author_sft.py --limit 20
 ```
 
-For each excerpt, it asks you for:
+For each excerpt, the tool requests:
 
 1. a realistic question a user might ask; and
 2. the best answer supported by that excerpt.
 
-It saves your work to `data/sft.custom.jsonl`. Validate it:
+Records are saved to `data/sft.custom.jsonl`. Validate them before training:
 
 ```bash
 python scripts/validate_data.py --sft data/sft.custom.jsonl
 ```
 
-Good answers should:
+High-quality answers should:
 
 - be factually supported by the displayed excerpt;
 - say “I do not know” when the excerpt lacks the answer;
-- use the tone and length you want in the final assistant;
+- use the intended production tone and level of detail;
 - avoid invented details; and
 - cover normal cases, exceptions, and ambiguous questions.
 
-## Step 4: run SFT
+### 4. Train the SFT adapter
 
-First run the tiny included smoke test:
+Run the included dataset as a pipeline smoke test:
 
 ```bash
 python scripts/train_sft.py --data data/sft.jsonl
 ```
 
-On an NVIDIA GPU, reduce memory use with QLoRA-style 4-bit loading:
+On an NVIDIA GPU, enable QLoRA-style 4-bit loading to reduce memory usage:
 
 ```bash
 python scripts/train_sft.py --data data/sft.jsonl --use-4bit
@@ -282,7 +296,7 @@ python scripts/train_sft.py --data data/sft.jsonl --use-4bit
 
 The official Transformers documentation recommends the NF4 data type when training 4-bit base models; the script applies that configuration. See [Transformers bitsandbytes documentation](https://huggingface.co/docs/transformers/quantization/bitsandbytes).
 
-For your reviewed examples:
+To train with reviewed custom examples:
 
 ```bash
 python scripts/train_sft.py \
@@ -294,7 +308,7 @@ python scripts/train_sft.py \
 
 Remove `--use-4bit` if you are not using an NVIDIA GPU.
 
-The important output is:
+The resulting adapter is written to:
 
 ```text
 outputs/sft_adapter/
@@ -302,9 +316,9 @@ outputs/sft_adapter/
 
 This directory contains only the learned LoRA adapter and tokenizer configuration, not another full copy of the base model.
 
-## Step 5: collect real human preferences
+### 5. Collect human preference data
 
-Edit `data/questions.txt` so it contains realistic questions about your documents, one per line. Keep some questions aside for evaluation so the training set is not also the test.
+Edit `data/questions.txt` to contain one realistic question per line. Reserve a separate set of questions for evaluation to avoid training-test overlap.
 
 Then run:
 
@@ -329,7 +343,7 @@ A saved preference record has this shape:
 }
 ```
 
-That is the human-feedback step. Judge answers using one consistent rubric:
+Evaluate each pair with a consistent rubric:
 
 1. Is every claim supported by the excerpt?
 2. Does it answer the actual question?
@@ -337,17 +351,17 @@ That is the human-feedback step. Judge answers using one consistent rubric:
 4. Is it concise and easy to understand?
 5. Is its tone appropriate?
 
-If both answers are wrong or essentially identical, skip the pair. A false preference label teaches the wrong lesson.
+Skip pairs when both answers are incorrect or materially equivalent. Low-quality preference labels directly weaken the training signal.
 
-The collector remembers completed questions, so you can quit and resume later. Validate the result:
+The collector records completed questions and supports resuming a later session. Validate the resulting dataset:
 
 ```bash
 python scripts/validate_data.py --preferences data/preferences.jsonl
 ```
 
-`data/preferences.example.jsonl` shows the format but is explicitly marked as demonstration data. It is not a substitute for your own choices.
+`data/preferences.example.jsonl` demonstrates the expected format and is explicitly marked as synthetic demonstration data. It is not a substitute for human evaluation.
 
-## Step 6: align the adapter with DPO
+### 6. Train the DPO adapter
 
 Run:
 
@@ -361,7 +375,7 @@ Or on an NVIDIA GPU:
 python scripts/train_dpo.py --use-4bit
 ```
 
-DPO compares the probability of the chosen answer with the probability of the rejected answer, relative to the starting SFT model. It nudges the adapter toward the pattern in your selections. TRL uses the initial policy as its reference when `ref_model=None`, which is how the script is configured.
+DPO compares the likelihood of the chosen and rejected answers relative to the starting SFT model. The optimization updates the adapter toward the preferred response patterns. With `ref_model=None`, TRL uses the initial policy as the reference model.
 
 The result is saved at:
 
@@ -376,25 +390,25 @@ The defaults are intentionally conservative:
 - DPO beta `0.1`; and
 - LoRA rather than full-model training.
 
-More training is not automatically better. Too many epochs on a tiny preference set can make the model worse or overly narrow.
+Additional training is not necessarily beneficial. Excessive optimization on a small preference dataset can reduce generalization and produce overly narrow behavior.
 
-## Step 7: use the assistant
+### 7. Run inference
 
-Ask one question:
+Run a single query:
 
 ```bash
 python scripts/chat.py "What is the delivery fee for five miles?"
 ```
 
-Start an interactive chat:
+Start an interactive session:
 
 ```bash
 python scripts/chat.py
 ```
 
-The chat program retrieves relevant excerpts, sends them to the aligned model, prints the answer, and lists the source chunks it used.
+The inference script retrieves relevant excerpts, passes them to the aligned model, prints the response, and lists the source chunks used as context.
 
-You can also test the SFT adapter before DPO:
+To test the SFT adapter before DPO:
 
 ```bash
 python scripts/chat.py \
@@ -402,15 +416,15 @@ python scripts/chat.py \
   "Can the bakery guarantee no allergen cross-contact?"
 ```
 
-Or compare with the untouched base model:
+To compare against the unmodified base model:
 
 ```bash
 python scripts/chat.py --base-only "When is the bakery open Sunday?"
 ```
 
-## Step 8: evaluate before trusting it
+### 8. Evaluate the model
 
-Never judge a model using only the examples it trained on.
+Evaluate all model variants on questions that were excluded from training.
 
 Create 20–50 held-out questions representing:
 
@@ -431,11 +445,11 @@ For each question, compare the base, SFT, and DPO versions using the same retrie
 | Uncertainty | Pretends to know | Vague | Correctly says what is missing |
 | Style | Poor | Acceptable | Desired style |
 
-Do not deploy unless the DPO model improves the held-out results without introducing serious new failures. Keep a person in the loop for medical, legal, financial, safety, employment, or other high-stakes decisions.
+Do not deploy the adapter unless it improves held-out results without introducing material regressions. Human review remains necessary for medical, legal, financial, employment, safety, and other high-impact use cases.
 
-## The most important code, explained
+## Implementation notes
 
-### Reading a PDF
+### PDF text extraction
 
 The ingestion script follows PyMuPDF's basic extraction pattern:
 
@@ -447,7 +461,7 @@ with pymupdf.open(path) as document:
         text = page.get_text("text", sort=True)
 ```
 
-### Training only a small adapter
+### Parameter-efficient fine-tuning
 
 `train_sft.py` configures LoRA for all linear layers:
 
@@ -460,11 +474,11 @@ lora = LoraConfig(
 )
 ```
 
-This is much cheaper than changing every base-model weight.
+This configuration trains a small adapter rather than updating every base-model parameter.
 
-### Expressing a preference
+### Preference record format
 
-DPO needs three things:
+DPO records contain a prompt, a preferred response, and a rejected response:
 
 ```python
 record = {
@@ -474,7 +488,7 @@ record = {
 }
 ```
 
-### Grounding the final answer
+### Retrieval-grounded inference
 
 `chat.py` retrieves matching excerpts and builds a prompt that says:
 
@@ -488,17 +502,17 @@ If the answer is not in them, say you do not know.
 Question: ...
 ```
 
-Fine-tuning shapes behavior; retrieval supplies current facts. Keeping these jobs separate makes document updates easier because you can re-run ingestion without re-training the model every time a policy changes.
+Fine-tuning shapes response behavior, while retrieval provides current source material. This separation allows document updates to be ingested without retraining the adapter unless the desired behavior or response style also changes.
 
-## Common problems
+## Troubleshooting
 
 ### `No selectable text found ... It may need OCR`
 
-The PDF is probably scanned. Apply OCR with a tool such as OCRmyPDF, then run ingestion again.
+The PDF is likely image-only. Apply OCR with a tool such as OCRmyPDF, then run ingestion again.
 
 ### CUDA out of memory
 
-Try, in order:
+Apply the following mitigations in order:
 
 1. add `--use-4bit`;
 2. lower `--max-length` to `512`;
@@ -510,9 +524,9 @@ Try, in order:
 
 Remove `--use-4bit` on a Mac or CPU machine. This tutorial intentionally limits that option to the most predictable bitsandbytes setup.
 
-### The answers are poor after the demo run
+### Limited response quality after the demonstration run
 
-That is expected. Eight examples are not enough. Improve the data before increasing epochs:
+The included eight examples validate the pipeline but are insufficient for meaningful alignment. Improve the dataset before increasing the number of epochs:
 
 - add more realistic and varied SFT examples;
 - correct weak ideal answers;
@@ -520,11 +534,11 @@ That is expected. Eight examples are not enough. Improve the data before increas
 - add examples where the correct answer is “I do not know”; and
 - check that retrieval found the right excerpt.
 
-### The model memorizes but does not follow instructions
+### Instruction-following behavior does not improve
 
-Make the SFT prompts resemble real use. Include the reference excerpts and exact behaviors you want. Avoid feeding raw document text as if it were already an instruction dataset.
+Ensure that SFT prompts reflect the intended inference format and include both reference excerpts and explicit response expectations. Raw document text alone is not an instruction dataset.
 
-### The model answers from old information
+### Responses use outdated information
 
 Re-run:
 
@@ -532,11 +546,11 @@ Re-run:
 python scripts/prepare_documents.py
 ```
 
-Because chat uses retrieval, updated chunks are available immediately. Re-train only when the desired behavior or answer style changes substantially.
+The inference workflow uses the regenerated chunks immediately. Retraining is necessary only when the desired behavior or answer style changes substantially.
 
-## Privacy, copyright, and safety checklist
+## Responsible-use checklist
 
-Before training:
+Before training or publishing an adapter:
 
 - [ ] I own the files or have permission to use them for model training.
 - [ ] I checked the base model's license for my planned use.
@@ -547,9 +561,9 @@ Before training:
 - [ ] I will not treat this small model as an authority in high-stakes decisions.
 - [ ] I will keep source citations visible to users.
 
-## What to improve next
+## Roadmap
 
-Once the basic workflow is reliable, useful next steps are:
+Potential extensions include:
 
 1. replace keyword retrieval with an embedding-based vector retriever;
 2. add a browser interface with Gradio or another local UI;
@@ -558,9 +572,9 @@ Once the basic workflow is reliable, useful next steps are:
 5. compare multiple seeds and checkpoints on a fixed evaluation set; and
 6. move to a larger Apache-licensed model only after the data and evaluation process are sound.
 
-The small model is a teaching tool. The durable asset is the carefully reviewed dataset, preference rubric, and evaluation set.
+The primary value of this project is the reviewed dataset, preference rubric, and evaluation process rather than the demonstration model itself.
 
-## Technical references
+## References
 
 - Nathan Lambert's [*Reinforcement Learning from Human Feedback*](https://rlhfbook.com/): [Training Overview](https://rlhfbook.com/c/03-training-overview), [Instruction Fine-Tuning](https://rlhfbook.com/c/04-instruction-tuning), [Direct-Alignment Algorithms](https://rlhfbook.com/c/08-direct-alignment), and [Preference Data](https://rlhfbook.com/c/11-preference-data).
 - [Qwen3-0.6B-Base model card](https://huggingface.co/Qwen/Qwen3-0.6B-Base).
@@ -570,7 +584,7 @@ The small model is a teaching tool. The durable asset is the carefully reviewed 
 - [PyMuPDF text-extraction documentation](https://pymupdf.readthedocs.io/en/latest/the-basics.html#extract-text-from-a-pdf).
 - [Direct Preference Optimization paper](https://arxiv.org/abs/2305.18290).
 
-### Cite the RLHF Book
+### Citing the RLHF Book
 
 If the book informs your work, use the citation provided by its author:
 
@@ -584,7 +598,7 @@ If the book informs your work, use the citation provided by its author:
 }
 ```
 
-## License and third-party attribution
+## License and attribution
 
 Copyright 2026 Felipe Cosse.
 
